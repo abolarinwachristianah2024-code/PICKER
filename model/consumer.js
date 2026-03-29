@@ -32,6 +32,12 @@ const consumerSchema = new mongoose.Schema({
             .padStart(4, "0");
         },
     },
+    otpExpiry: {
+        type: Date,
+        default: () => {
+            return new Date(Date.now() + 30 * 60 * 1000)
+        }
+    },
     profilePicture: {
         secureUrl: {
             type: String,

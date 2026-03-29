@@ -9,3 +9,8 @@ router.post('/consumer/check', verifyEmail)
 router.post('/login', login)
 
 module.exports = router
+
+    // "name": "abolarinwa",
+    // "email": "christianahabolarinwa7@gmail.com",
+    // "phone": "09654328989",
+    // "password": "christian678"

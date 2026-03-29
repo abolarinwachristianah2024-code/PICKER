@@ -88,7 +88,11 @@ exports.verifyEmail = async (req, res) => {
         message: 'Invalid OTP Provided'
       })
     };
-
+    if (consumer.otpExpiry < new Date()) {
+      return res.status(400).json({
+        message: 'OTP has expired'
+      })
+    };
     consumer.isVerified = true;
     await consumer.save();
     res.status(200).json({
