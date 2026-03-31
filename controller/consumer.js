@@ -140,13 +140,13 @@ exports.resendEmail = async(req, res) =>{
         }
            const html = await emailTemplate(consumer.name, consumer.otp)
 
-        const userData = {
+        const consumerData = {
             email: consumer.email,
             subject: 'Verify Email',
             html
         }
 
-        await sendEmail(userData)
+        await sendEmail(consumerData)
         consumer.otp = Math.round(Math.random() * 1e4).toString().padStart(4, '0');
         consumer.otpExpiry = Date.now() + (1000 * 60 * 3);
         await consumer.save();
