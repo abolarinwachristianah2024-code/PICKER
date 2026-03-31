@@ -33,9 +33,9 @@ const consumerSchema = new mongoose.Schema({
         },
     },
     otpExpiry: {
-        type: Date,
+        type: Number,
         default: () => {
-            return new Date(Date.now() + 30 * 60 * 1000)
+            return Date.now() +  (3 * 60 * 1000)
         }
     },
     profilePicture: {

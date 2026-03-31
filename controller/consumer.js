@@ -2,37 +2,53 @@ const consumerModel = require('../model/consumer')
 const bcrypt = require('bcrypt')
 const cloudinary = require('../middlewares/cloudinary')
 const fs = require('fs')
-const {brevo} = require('../utils/brevo')
-const emailTemplate = require('../email')
 const jwt = require('jsonwebtoken');
+const { emailTemplate } = require('../email');
+const { sendEmail } = require('../utils/brevo');
 
 
 
 
-exports.createConsumer = async (req, res) =>{
+exports.createConsumer = async (req, res) => {
     try {
         const { name, email, phone, password } = req.body
+        const existingConsumer = await consumerModel.findOne({ email: email.toLowerCase() })
+
+        if (existingConsumer) {
+            return res.status(400).json({
+                message: 'Consumer already exist'
+            })
+        }
+
         const salt = await bcrypt.genSalt(10);
         const hashPassword = await bcrypt.hash(password, salt)
-        const newConsumer = await consumerModel.create({
+
+        const newConsumer = new consumerModel({
             name,
             email,
             phone,
             password: hashPassword
         })
-        const consumers = await consumerModel.find()
-        brevo(newConsumer.email, newConsumer.name, emailTemplate(newConsumer.name, newConsumer.otp))
-        await newConsumer.save()
 
+        const html = await emailTemplate(newConsumer.name, newConsumer.otp)
+
+        const userData = {
+            email: newConsumer.email,
+            subject: 'Verify Email',
+            html
+        }
+
+        const emailRes = await sendEmail(userData)
+        console.log("Email Response:", emailRes)
+        await newConsumer.save()
         res.status(201).json({
             message: "Consumer created successfully",
-            data: newConsumer,
-            count: consumers.length
+            data: newConsumer
         })
     } catch (error) {
-        console.log(error.message)
+        console.log(error);
         res.status(500).json({
-            message: "Something went wrong"
+            message: 'Cannot create cusumer at the moment'
         })
     }
 }
@@ -44,20 +60,21 @@ exports.updateProfile = async (req, res) => {
         const extractSecureurl = uploadResponse.secure_url;
 
         if (!req.file) {
-            return res.status(400).json({ 
-                message: "No file uploaded" 
+            return res.status(400).json({
+                message: "No file uploaded"
             });
         }
         const filePath = req.file.path;
         await fs.promises.unlink(filePath)
 
-        const{ name } = req.body
-        const{ id } = req.params
-        const profilePicture={
-            secureUrl:extractSecureurl,
-            publicId:uploadResponse.public_id
+        const { name } = req.body
+        const { id } = req.params
+        const profilePicture = {
+            secureUrl: extractSecureurl,
+            publicId: uploadResponse.public_id
         }
-        const newUpdate = await consumerModel.findByIdAndUpdate(id, { name, profilePicture }, {new: true
+        const newUpdate = await consumerModel.findByIdAndUpdate(id, { name, profilePicture }, {
+            new: true
         })
         res.status(201).json({
             message: "Consumer updated successfully",
@@ -72,82 +89,120 @@ exports.updateProfile = async (req, res) => {
 }
 
 exports.verifyEmail = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    const consumer = await consumerModel.findOne({ email: email })
-    console.log(consumer)
+    try {
+        const { email, otp } = req.body;
+        const consumer = await consumerModel.findOne({ email: email })
+        console.log(consumer)
 
-    if (!consumer) {
-      return res.status(404).json({
-        message: 'consumer not found'
-      })
-    };
+        if (!consumer) {
+            return res.status(404).json({
+                message: 'consumer not found'
+            })
+        };
 
-    if (consumer.otp !== otp) {
-      return res.status(400).json({
-        message: 'Invalid OTP Provided'
-      })
-    };
-    if (consumer.otpExpiry < new Date()) {
-      return res.status(400).json({
-        message: 'OTP has expired'
-      })
-    };
-    consumer.isVerified = true;
-    await consumer.save();
-    res.status(200).json({
-      message: 'OTP Verified successfully',
-      data: consumer
-    })
-  } catch (error) {
-    console.log(error.message),
-      res.status(500).json({
-        message: "Something went wrong"
-      })
-  }
+        if (consumer.otp !== otp) {
+            return res.status(400).json({
+                message: 'Invalid OTP Provided'
+            })
+        };
+
+        if (consumer.otpExpiry < Date.now()) {
+            return res.status(400).json({
+                message: 'OTP has expired'
+            })
+        };
+        consumer.isVerified = true;
+        consumer.otp = null;
+        consumer.otpExpiry = null;
+        await consumer.save();
+        res.status(200).json({
+            message: 'OTP Verified successfully',
+            data: consumer
+        })
+    } catch (error) {
+        console.log(error.message),
+            res.status(500).json({
+                message: "Something went wrong"
+            })
+    }
 };
 
+exports.resendEmail = async(req, res) =>{
+    try {
+        const {email} = req.body
+        const consumer = await consumerModel.findOne({
+            email: email.toLowerCase()
+        })
+        if(!consumer){
+            return res.status(404).json({
+                message: "Consumer not found"
+            })
+        }
+           const html = await emailTemplate(consumer.name, consumer.otp)
+
+        const userData = {
+            email: consumer.email,
+            subject: 'Verify Email',
+            html
+        }
+
+        await sendEmail(userData)
+        consumer.otp = Math.round(Math.random() * 1e4).toString().padStart(4, '0');
+        consumer.otpExpiry = Date.now() + (1000 * 60 * 3);
+        await consumer.save();
+        res.status(201).json({
+            message: "OTP resent to Email",
+        })
+    } catch (error) {
+        console.log(error.message),
+            res.status(500).json({
+                message: "Something went wrong"
+            })
+    }
+}
+
+
 exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const consumer = await consumerModel.findOne({ email: email })
+    try {
+        const { email, password } = req.body;
+        const consumer = await consumerModel.findOne({ email: email })
 
-    if (!consumer) {
-      return res.status(404).json({
-        message: 'Invalid Credentials'
-      })
-    };
+        if (!consumer) {
+            return res.status(404).json({
+                message: 'Invalid Credentials'
+            })
+        };
 
-    const correctPassword = await bcrypt.compare(password, consumer.password);
+        const correctPassword = await bcrypt.compare(password, consumer.password);
 
-    if (!correctPassword) {
-      return res.status(400).json({
-        message: 'Invalid Credentials'
-      })
-    };
+        if (!correctPassword) {
+            return res.status(400).json({
+                message: 'Invalid Credentials'
+            })
+        };
 
-    
-    if (consumer.isVerified = false) {
-      return res.status(400).json({
-        message: 'Please verify your email'
-      })
-    };
 
-    const token = jwt.sign(
-      { id: consumer._id, role: consumer.role },
-      process.env.SECRET_KEY,
-      { expiresIn: '1day' }
-    );
+        if (consumer.isVerified = false) {
+            return res.status(400).json({
+                message: 'Please verify your email'
+            })
+        };
 
-    res.status(200).json({
-      message: 'Login sucessfull',
-      token,
-      consumer
-    })
-  } catch (error) {
-    console.log(error),
-      res.status(500).json({
-        message: "Something went wrong"
-      })
-  }
+        const token = jwt.sign(
+            { id: consumer._id, role: consumer.role },
+            process.env.SECRET_KEY,
+            { expiresIn: '1day' }
+        );
+
+        res.status(200).json({
+            message: 'Login sucessfull',
+            token,
+            consumer
+        })
+    } catch (error) {
+        console.log(error),
+            res.status(500).json({
+                message: "Something went wrong"
+            })
+    }
 }

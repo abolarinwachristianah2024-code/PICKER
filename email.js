@@ -1,4 +1,4 @@
-const emailTemplate = (name, otp) => {
+exports.emailTemplate = (fullName, otp) => {
     return `
     <!DOCTYPE html>
 <html lang="en">
@@ -91,7 +91,7 @@ body {
         <div class="upper-div">
             <div class="upper-div-1">
                 <h1>Email OTP Verification</h1>
-                <h3>Hello, ${name}</h3>
+                <h3>Hello, ${fullName}</h3>
                 <p>Below is your one time passcode that you need to use to complete your authentication. The verification code will be valid for 30 minutes. Please do not share this code with anyone.</p>
             </div>
             <div class="upper-div-2">
@@ -112,4 +112,3 @@ body {
     `
 }
 
-module.exports = emailTemplate
