@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const groupSchema = new mongoose.Schema({
+const orderSchema = new mongoose.Schema({
     ordersType:{
         type: String,
         enum:["simple", "combo", "executive", "family pack"],
@@ -34,6 +34,6 @@ const groupSchema = new mongoose.Schema({
 
 }, {timeStamp: true});
 
-const groupModel = mongoose.model('groupInfo', groupSchema)
+const orderModel = mongoose.model('orderInfo', orderSchema)
 
-module.exports = groupModel;
+module.exports = orderModel;

@@ -22,9 +22,7 @@ const authentication = async (req, res, next)=>{
         })
         // console.log(data)
     } catch (error) {
-        res.status(500).json({
-            message: 'Validation error'
-        })
+        next(error)
     }
 }
 module.exports = {

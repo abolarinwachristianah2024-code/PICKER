@@ -3,10 +3,8 @@ const bcrypt = require('bcrypt')
 const cloudinary = require('../middlewares/cloudinary')
 const fs = require('fs')
 const jwt = require('jsonwebtoken');
-const { emailTemplate } = require('../email');
+const { emailTemplate, resetPasswordTemplate, resetPasswordSuccessfulTemplate } = require('../email');
 const { sendEmail } = require('../utils/brevo');
-
-
 
 
 exports.createConsumer = async (req, res) => {
@@ -165,14 +163,13 @@ exports.resendEmail = async(req, res) =>{
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const consumer = await consumerModel.findOne({ email: email })
+        const consumer = await consumerModel.findOne({ email: email.toLowerCase().trim() })
 
         if (!consumer) {
             return res.status(404).json({
                 message: 'Invalid Credentials'
             })
         };
-
         const correctPassword = await bcrypt.compare(password, consumer.password);
 
         if (!correctPassword) {
@@ -182,11 +179,12 @@ exports.login = async (req, res) => {
         };
 
 
-        if (consumer.isVerified = false) {
+        if (consumer.isVerified == false) {
             return res.status(400).json({
                 message: 'Please verify your email'
             })
         };
+        // the above consumer.isVerified will not work since i did not put isVerified in the model, so login will work directly
 
         const token = jwt.sign(
             { id: consumer._id, role: consumer.role },
@@ -205,4 +203,139 @@ exports.login = async (req, res) => {
                 message: "Something went wrong"
             })
     }
+}
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const {email} = req.body
+    const consumer = await consumerModel.findOne({email: email.toLowerCase()});
+    if(consumer == null) {
+      return res.status(404).json({
+        message: 'Invalid credentials'
+      })
+    }
+    const OTP = Math.round(Math.random() * 1e4).toString().padStart(6, "0");
+    consumer.otp = OTP
+    consumer.otpExpiry = Date.now() + (1000*60*10)
+    // create email message
+    const data = {
+      name: consumer.fullname,
+      otp: OTP
+    }
+    sendEmail(email, consumer.fullname, resetPasswordTemplate(data))
+    // save changes to the database
+    await consumer.save()
+    // send a response
+    res.status(200).json({
+      message: "Forgot password successful"
+    })
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({
+      message: "Something went wrong"
+    })
+  }
+}
+
+exports.resetPassword = async(req, res) =>{
+  try {
+    // extract the required fields from the request body
+    const { otp, password, email } = req.body;
+    const consumer = await consumerModel.findOne({email: email.toLowerCase()})
+    if (consumer == null) {
+      res.status(404).json({
+        message: "Invalid credentials"
+      })
+    }
+    if (Date.now() > consumer.otpExpiry || otp !== consumer.otp) {
+      res.status(404).json({
+        message: "Invalid credentials"
+      })
+    }
+    const salt = await bcrypt.genSalt(10)
+    const hashedPassword = await bcrypt.hash(password, salt);
+    consumer.password = hashedPassword
+
+  // save the changes to the database
+  await consumer.save();
+// create email message
+  const data = {
+      name: consumer.fullname,
+      otp: consumer.otp
+    }
+  // message of succesful reset of password sent
+  await brevo(email, user.fullname, resetPasswordSuccessfulTemplate(data))
+  res.status(200).json({
+    message: "Password reset successfully"
+  })
+  
+  } catch (error) {
+    console.log(error.message)
+    res.status(500).json({
+      message: "Something went wrong"
+    })
+  }
+}
+
+exports.changePassword = async(req, res) => {
+  try {
+    const {id} = req.user;
+    const { oldPassword, newPassword } = req.body
+    const consumer = await consumerModel.findById(id);
+    if (!consumer){
+      return res.status(404).json({
+        message: "consumer not found"
+      })
+    }
+    // confirm old password
+    const checkPassword = await bcrypt.compare(oldPassword, consumer.password);
+    if(!checkPassword){
+      return res.status(404).json({
+        message: "Old password is invalid"
+      })
+    }
+    // encrypt and change password
+    const salt = await bcrypt.genSalt(10)
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    user.password = hashedPassword
+    // save changes to database
+    await consumer.save();
+    res.status(200).json({
+      message: "Password changed successfully"
+    })
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({
+      message: "Something went wrong"
+    })
+  }
+}
+
+exports.loginWithGoogle = async(req, res) =>{
+    const consumer = req.user
+    
+    if(!consumer){
+        return res.status(404).json({
+            message: "Consumer not found"
+        })
+    }
+  try {
+    console.log(req.user._id)
+    const consumer = await consumerModel.findById(req.user._id)
+
+    const token = jwt.sign({
+      id: req.user._id,
+      }, process.env.SECRET_KEY, { expiresIn: '1d' })
+    res.status(200).json({
+      message: 'Login sucessful',
+      data: req.user.name,
+      token
+    })
+    
+  } catch (error) {
+    console.log(error.message)
+    res.status(500).json({
+      message: "Something went wrong"
+    })
+  }
 }
